@@ -119,24 +119,28 @@ static int handle_put_light(microcoap_rw_buffer_t *scratch,
     mpack_expect_utf8_cstr(&reader,buf_mapname,sizeof(buf_mapname));
     mpack_expect_map_match(&reader,2);
 
-    char buf_id_key[64];
-    char buf_id_value[64];
-    mpack_expect_utf8_cstr(&reader,buf_id_key,sizeof(buf_id_key));
-    mpack_expect_utf8_cstr(&reader,buf_id_value,sizeof(buf_id_value));
+    char buf_key[64] = "\0";
+    char buf_id_value[64] = "\0";
+    char buf_v_value[64] = "\0";
+    char buf_unknown_value[64] = "\0";
 
-    char buf_v_key[64];
-    char buf_v_value[64];
-    mpack_expect_utf8_cstr(&reader,buf_v_key,sizeof(buf_v_key));
-    mpack_expect_utf8_cstr(&reader,buf_v_value,sizeof(buf_v_value));
-
+    for (int i = 0; i < 2; i++) {
+		mpack_expect_utf8_cstr(&reader,buf_key,sizeof(buf_key));
+		if (strcmp(buf_key,"id") == 0) {
+			mpack_expect_utf8_cstr(&reader,buf_id_value,sizeof(buf_id_value));
+		} else {
+			if (strcmp(buf_key,"v") == 0) {
+				mpack_expect_utf8_cstr(&reader,buf_v_value,sizeof(buf_v_value));
+			} else {
+				mpack_expect_utf8_cstr(&reader,buf_unknown_value,sizeof(buf_unknown_value));
+			}
+		}
+    }
 
     mpack_done_map(&reader);
     mpack_done_map(&reader);
 
-    Serial.println(buf_id_key);
-    Serial.println(buf_id_value);
-    Serial.println(buf_v_key);
-    Serial.println(buf_v_value);
+    Serial.printlnf("(1) id=%s v=%s unknown=%s",buf_id_value, buf_v_value, buf_unknown_value);
 
     char	buf_error[64];
     mpack_error_t error = mpack_reader_destroy(&reader);
@@ -153,37 +157,34 @@ static int handle_put_light(microcoap_rw_buffer_t *scratch,
 				COAP_CONTENTTYPE_TEXT_PLAIN);
 
     } else {
- /*   	if (strcmp(buf_id_key,"id") != 0) {
-    	   	strcpy(buf_error,"first element must be 'id'");
-            return microcoap_make_response(scratch,
-            		outpkt,
-					(const uint8_t *)&buf_error[0],
-					strlen(buf_error),
-    				0, id_hi, id_lo,
-    				&inpkt->tok,
-    				COAP_RSPCODE_BAD_REQUEST,
-    				COAP_CONTENTTYPE_TEXT_PLAIN
-			);
-
-    	}
+    	bool b_error = false;
     	if (strcmp(buf_id_value,"light") != 0) {
-    	   	strcpy(buf_error,"'id' must be 'light' for this resource");
-            return microcoap_make_response(scratch,
-            		outpkt,
-					(const uint8_t *)&buf_error[0],
-					strlen(buf_error),
-    				0, id_hi, id_lo,
-    				&inpkt->tok,
-    				COAP_RSPCODE_BAD_REQUEST,
-    				COAP_CONTENTTYPE_TEXT_PLAIN
-			);
+    		strcpy(buf_error,"Given id does not match uri (light)");
+    		b_error = true;
     	}
-*/
+    	if (strlen(buf_unknown_value) > 0) {
+    		strcpy(buf_error,"Detected unknown key");
+    		b_error = true;
+    	}
+    	Serial.println(buf_error);
 
+    	if (b_error) {
+    		return microcoap_make_response(scratch,
+    		            		outpkt,
+    							(const uint8_t *)&buf_error[0],
+    							(int)strlen(buf_error),
+    		    				id_hi, id_lo,
+    		    				&inpkt->tok,
+    		    				COAP_RSPCODE_BAD_REQUEST,
+    		    				COAP_CONTENTTYPE_TEXT_PLAIN);
+    	}
+
+    	bool b_handled = false;
     	if (strcmp(buf_v_value, "on") == 0) {
     		// turn light on
             digitalWrite(led, HIGH);
             light = '1';
+            b_handled = true;
 
             return microcoap_make_response(scratch,
             		outpkt,
@@ -200,6 +201,7 @@ static int handle_put_light(microcoap_rw_buffer_t *scratch,
     		// turn light on
             digitalWrite(led, LOW);
             light = '0';
+            b_handled = true;
 
             return microcoap_make_response(scratch,
             		outpkt,
@@ -212,7 +214,20 @@ static int handle_put_light(microcoap_rw_buffer_t *scratch,
     				COAP_CONTENTTYPE_TEXT_PLAIN
     		);
     	}
-    }
+
+    	if (!b_handled) {
+       		strcpy(buf_error,"Invalid input value, valid are on/off.");
+        	Serial.println(buf_error);
+        	return microcoap_make_response(scratch,
+    		            		outpkt,
+    							(const uint8_t *)&buf_error[0],
+    							(int)strlen(buf_error),
+    		    				id_hi, id_lo,
+    		    				&inpkt->tok,
+    		    				COAP_RSPCODE_BAD_REQUEST,
+    		    				COAP_CONTENTTYPE_TEXT_PLAIN);
+    	}
+}
 }
 
 #ifdef __cplusplus
